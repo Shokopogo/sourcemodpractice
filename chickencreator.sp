@@ -10,11 +10,16 @@
 #include <cstrike>
 #include <clientprefs>
 #include <sdkhooks>
+#include <adt>
+#include <adt_trie>
+
 
 #pragma newdecls required
 
 #define MODEL_CHICKEN "models/chicken/chicken.mdl"
 #define MODEL_CHICKEN_ZOMBIE "models/chicken/chicken_zombie.mdl"
+
+#define MAX_CHICKENS 64
 
 public Plugin myinfo = 
 {
@@ -31,26 +36,43 @@ Handle g_ChickenCookie;
 
 ConVar g_GlowDefault;
 
-char g_ChickenSettings[MAXPLAYERS + 1][7][64];
+bool g_GlowSetting;
 
-char g_GlowSetting[8];
+int g_ChickenEntities[MAX_CHICKENS];
 
-int g_ChickenEntities[64];
-
-int g_ChickenHealth[64];
+int g_ChickenHealth[MAX_CHICKENS];
 
 int g_NumberOfChickens = 0;
 
-public void OnPluginStart()
+StringMap g_ChickenValues;
+
+enum struct ChickenSettings
 {
+	bool glow;
+	char colour[16];
+	float glowDistance;
+	int glowStyle;
+	float skin;
+	char model[64];
+	int health;
+}
+
+ChickenSettings g_newChickenSettings[MAXPLAYERS + 1];
+
+
+public void OnPluginStart()
+{	
+
+	g_ChickenValues = new StringMap();
+	
 	
 	g_GlowDefault = CreateConVar("glow_enabled_default", "0", "If 1 glow will be enabled by default for all new players.");
 	g_GlowDefault.AddChangeHook(OnGlowDefaultChange);
+
+	g_GlowSetting = GetConVarBool(g_GlowDefault);
 	
-	GetConVarString(g_GlowDefault, g_GlowSetting, sizeof(g_GlowSetting));
-	
-	for (int i = 0; i <= MAXPLAYERS; i++)
-	{	
+	for (int i = 0; i <= MaxClients; i++)
+	{
 		SetupKeyArray(i);
 	}
 	
@@ -59,19 +81,54 @@ public void OnPluginStart()
 	RegAdminCmd("sm_cc", Command_ChickenCreator, ADMFLAG_GENERIC, "Opens a menu to create a chicken at crosshair position.");
 	RegAdminCmd("sm_cca", Command_ChickenCreatorAnnounce, ADMFLAG_GENERIC, "Enables or Disables announcement of chicken values based on provided value.");
 	g_ChickenCookie = RegClientCookie("announce_chicken", "Determines if we should announce in chat chicken settings", CookieAccess_Protected);
+	SetupStringMap();
+}
+
+public void SetupStringMap()
+{
+	
+	g_ChickenValues.SetValue("disable", false, true);
+	g_ChickenValues.SetValue("enable", true, true);
+	g_ChickenValues.SetString("red", "255 0 0", true);
+	g_ChickenValues.SetString("blue", "0 0 255", true);
+	g_ChickenValues.SetString("green", "0 255 0", true);
+	g_ChickenValues.SetString("black", "128 0 50", true);
+	g_ChickenValues.SetString("white", "255 255 255", true);
+	g_ChickenValues.SetValue("small", 1000.0, true);
+	g_ChickenValues.SetValue("medium", 2000.0, true);
+	g_ChickenValues.SetValue("large", 10000.0, true);
+	g_ChickenValues.SetValue("defaultstyle", 0, true);
+	g_ChickenValues.SetValue("shimmer", 1, true);
+	g_ChickenValues.SetValue("outline", 2, true);
+	g_ChickenValues.SetValue("outlinepulse", 3, true);
+	g_ChickenValues.SetValue("skin0", 0, true);
+	g_ChickenValues.SetValue("skin1", 0.5, true);
+	g_ChickenValues.SetValue("skin2", 1, true);
+	g_ChickenValues.SetString("defaultmodel", MODEL_CHICKEN, true);
+	g_ChickenValues.SetString("party", MODEL_CHICKEN, true);
+	g_ChickenValues.SetString("ghost", MODEL_CHICKEN_ZOMBIE, true);
+	g_ChickenValues.SetString("sweater", MODEL_CHICKEN, true);
+	g_ChickenValues.SetString("bunny", MODEL_CHICKEN, true);
+	g_ChickenValues.SetString("pumpkin", MODEL_CHICKEN, true);
+	g_ChickenValues.SetValue("health1", 1, true);
+	g_ChickenValues.SetValue("health10", 10, true);
+	g_ChickenValues.SetValue("health100", 100, true);
+	g_ChickenValues.SetValue("health1000", 1000, true);
+	
+	
 }
 
 public void OnGlowDefaultChange(ConVar con, char[] oldc, char[] newc)
 {
-	GetConVarString(g_GlowDefault, g_GlowSetting, sizeof(g_GlowSetting));
+	g_GlowSetting = GetConVarBool(g_GlowDefault);
 }
 
-public Action EntityDamagedEvent(int victim, int& attacker, int& inflictor, float& damage, int& damagetype)
+public Action EntityDamagedEvent(int victim, int & attacker, int & inflictor, float & damage, int & damagetype)
 {
 	
 	int chickenIndex = -1;
 	
-	for (int i = 0; i < sizeof(g_ChickenEntities); i++)
+	for (int i = 0; i < MAX_CHICKENS; i++)
 	{
 		if (g_ChickenEntities[i] == victim)
 		{
@@ -112,25 +169,25 @@ public void OnMapStart()
 public void SetupKeyArray(int client)
 {
 	// Chicken Glow is set to convar default
-	strcopy(g_ChickenSettings[client][0], sizeof(g_ChickenSettings[][]), g_GlowSetting);
-	
+	g_newChickenSettings[client].glow = g_GlowSetting;
+
 	// Chicken Glow Colour is set to red
-	strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "255 0 0");
+	strcopy(g_newChickenSettings[client].colour, sizeof(g_newChickenSettings[].colour), "255 0 0");
 	
 	// Chicken Glow Distance is set to small
-	strcopy(g_ChickenSettings[client][2], sizeof(g_ChickenSettings[][]), "1000");
+	g_newChickenSettings[client].glowDistance = 1000.0;
 	
 	// Chicken Glow Style is set to default
-	strcopy(g_ChickenSettings[client][3], sizeof(g_ChickenSettings[][]), "0");
+	g_newChickenSettings[client].glowStyle = 0;
 	
 	// Chicken Skin is set to 0
-	strcopy(g_ChickenSettings[client][4], sizeof(g_ChickenSettings[][]), "0");
+	g_newChickenSettings[client].skin = 0.0;
 	
 	// Chicken Model is set to default
-	strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
+	strcopy(g_newChickenSettings[client].model, sizeof(g_newChickenSettings[].model), MODEL_CHICKEN);
 	
 	// Chicken Health is set to 1
-	strcopy(g_ChickenSettings[client][6], sizeof(g_ChickenSettings[][]), "1");
+	g_newChickenSettings[client].health = 1;
 }
 
 public void OnClientCookiesCached(int client)
@@ -178,7 +235,7 @@ public Action Command_ChickenCreatorAnnounce(int client, int args)
 	GetCmdArg(args, arg, sizeof(arg));
 	
 	// if argument provided isn't a 1 or a 0 then error
-	if ( !(StrEqual(arg, "0") || StrEqual(arg, "1")) )
+	if (!(StrEqual(arg, "0") || StrEqual(arg, "1")))
 	{
 		ReplyToCommand(client, "[SM] usage: sm_cca <1/0>");
 		return Plugin_Handled;
@@ -191,12 +248,14 @@ public Action Command_ChickenCreatorAnnounce(int client, int args)
 
 public Menu SetupMenu(int type, int client)
 {
+	// create the menu to be setup
+	Menu menu = new Menu(Menu_Callback);
+	
 	switch (type)
 	{
 		// Main Menu
 		case 0:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Creator");
 			menu.AddItem("glow", "Chicken Glow");
 			menu.AddItem("glowcolour", "Chicken Glow Colour");
@@ -206,22 +265,17 @@ public Menu SetupMenu(int type, int client)
 			menu.AddItem("model", "Chicken Model");
 			menu.AddItem("health", "Chicken Health");
 			menu.AddItem("spawn", "Spawn Chicken");
-			return menu;
 		}
 		// Enable Glow Menu
 		case 1:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Glow");
 			menu.AddItem("disable", "Disable Glow");
 			menu.AddItem("enable", "Enable Glow");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
-		// Glow Colour Menu
 		case 2:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Glow Colour");
 			menu.AddItem("red", "Red");
 			menu.AddItem("blue", "Blue");
@@ -229,46 +283,38 @@ public Menu SetupMenu(int type, int client)
 			menu.AddItem("black", "Black");
 			menu.AddItem("white", "White");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 		// Glow Distance Menu
 		case 3:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Glow Distance");
 			menu.AddItem("small", "Small (1000)");
 			menu.AddItem("medium", "Medium (2000)");
 			menu.AddItem("large", "Large (10000)");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 		// Glow Style Menu
 		case 4:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Glow Style");
 			menu.AddItem("defaultstyle", "Default");
 			menu.AddItem("shimmer", "Shimmer");
 			menu.AddItem("outline", "Outline");
 			menu.AddItem("outlinepulse", "Outline Pulse");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 		// Skin Menu
 		case 5:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Skin");
 			menu.AddItem("skin0", "0");
 			menu.AddItem("skin1", "1");
 			menu.AddItem("skin2", "2");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 		// Model Menu
 		case 6:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Model");
 			menu.AddItem("defaultmodel", "Default");
 			menu.AddItem("party", "Birthday");
@@ -277,22 +323,18 @@ public Menu SetupMenu(int type, int client)
 			menu.AddItem("bunny", "Easter");
 			menu.AddItem("pumpkin", "Halloween Pumpkin");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 		// Health Menu
 		case 7:
 		{
-			Menu menu = new Menu(Menu_Callback);
 			menu.SetTitle("Chicken Health");
 			menu.AddItem("health1", "1");
 			menu.AddItem("health10", "10");
 			menu.AddItem("health100", "100");
 			menu.AddItem("health1000", "1000");
 			menu.AddItem("back", "Back");
-			return menu;
 		}
 	}
-	Menu menu = new Menu(Menu_Callback);
 	return menu;
 }
 
@@ -307,224 +349,68 @@ public int Menu_Callback(Menu menu, MenuAction action, int client, int choice)
 			menu.GetItem(choice, item, sizeof(item));
 			menu.GetTitle(title, sizeof(title));
 			
-			// go back to main menu (to remove redundancy is separate)
-			if (StrEqual(item, "back"))
+			// Spawn a chicken
+			if (StrEqual(item, "spawn"))
 			{
-				//delete menu;
+				// If we have space for another chicken entity
+				if (g_NumberOfChickens < MAX_CHICKENS)
+				{
+					// Spawn the chicken
+					SpawnChicken(client);
+				}
+				else
+				{
+					// Not enough space to spawn another chicken entity
+					ReplyToCommand(client, "Too many chicken entities spawned, please kill one and try again");
+				}
+			}
+			// Main menu, so really only sends to other menus
+			else if (StrEqual(title, "Chicken Creator"))
+			{
+				// Setup the new menu to display, and display it
+				Menu nmenu = SetupMenu(choice + 1, client);
+				nmenu.Display(client, MENU_TIME_FOREVER);
+			}
+			// Pressed the back button on a sub-menu go back to Main menu
+			else if (StrEqual(item, "back"))
+			{
+				// Setup the main menu and display it
 				Menu nmenu = SetupMenu(0, client);
 				nmenu.Display(client, MENU_TIME_FOREVER);
 			}
-			else if (StrEqual(title, "Chicken Creator"))
+			// Option selected was one that changes chicken settings
+			else
 			{
-				if (StrEqual(item, "glow"))
+				// Find the sub menu where the option was selected so we can change the value of the appropriate setting
+				if (StrEqual(title, "Chicken Glow"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(1, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetValue(item, g_newChickenSettings[client].glow);
 				}
-				else if (StrEqual(item, "glowcolour"))
+				else if (StrEqual(title, "Chicken Glow Colour"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(2, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetString(item, g_newChickenSettings[client].colour, sizeof(g_newChickenSettings[].colour));
 				}
-				else if (StrEqual(item, "glowdistance"))
+				else if (StrEqual(title, "Chicken Glow Distance"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(3, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetValue(item, g_newChickenSettings[client].glowDistance);
 				}
-				else if (StrEqual(item, "glowstyle"))
+				else if (StrEqual(title, "Chicken Glow Style"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(4, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetValue(item, g_newChickenSettings[client].glowStyle);
 				}
-				else if (StrEqual(item, "skin"))
+				else if (StrEqual(title, "Chicken Skin"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(5, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetValue(item, g_newChickenSettings[client].skin);
 				}
-				else if (StrEqual(item, "model"))
+				else if (StrEqual(title, "Chicken Model"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(6, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetString(item, g_newChickenSettings[client].model, sizeof(g_newChickenSettings[].model));
 				}
-				else if (StrEqual(item, "health"))
+				else if (StrEqual(title, "Chicken Health"))
 				{
-					//delete menu;
-					Menu nmenu = SetupMenu(7, client);
-					nmenu.Display(client, MENU_TIME_FOREVER);
+					g_ChickenValues.GetValue(item, g_newChickenSettings[client].health);
 				}
-				else if (StrEqual(item, "spawn"))
-				{
-					if (g_NumberOfChickens < 64)
-					{
-						SpawnChicken(client);
-					}
-					else
-					{
-						ReplyToCommand(client, "Too many chicken entities spawned, please kill one and try again");
-					}
-				}
-			}
-			else if (StrEqual(title, "Chicken Glow"))
-			{
-				if (StrEqual(item, "disable"))
-				{
-					PrintToChatAll("Disable Glow");
-					strcopy(g_ChickenSettings[client][0], sizeof(g_ChickenSettings[][]), "0");
-				}
-				else if (StrEqual(item, "enable"))
-				{
-					PrintToChatAll("Enable Glow");
-					strcopy(g_ChickenSettings[client][0], sizeof(g_ChickenSettings[][]), "1");
-				}
-			}
-			else if (StrEqual(title, "Chicken Glow Colour"))
-			{
-				if (StrEqual(item, "red"))
-				{
-					PrintToChatAll("Red");
-					strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "255 0 0");
-				}
-				else if (StrEqual(item, "blue"))
-				{
-					PrintToChatAll("Blue");
-					strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "0 0 255");
-				}
-				else if (StrEqual(item, "green"))
-				{
-					PrintToChatAll("Green");
-					strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "0 255 0");
-				}
-				else if (StrEqual(item, "black"))
-				{
-					PrintToChatAll("Black");
-					strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "128 0 50");
-				}
-				else if (StrEqual(item, "white"))
-				{
-					PrintToChatAll("White");
-					strcopy(g_ChickenSettings[client][1], sizeof(g_ChickenSettings[][]), "255 255 255");
-				}
-			}
-			else if (StrEqual(title, "Chicken Glow Distance"))
-			{
-				if (StrEqual(item, "small"))
-				{
-					PrintToChatAll("Small");
-					strcopy(g_ChickenSettings[client][2], sizeof(g_ChickenSettings[][]), "1000");
-				}
-				else if (StrEqual(item, "medium"))
-				{
-					PrintToChatAll("Medium");
-					strcopy(g_ChickenSettings[client][2], sizeof(g_ChickenSettings[][]), "2000");
-				}
-				else if (StrEqual(item, "large"))
-				{
-					PrintToChatAll("Large");
-					strcopy(g_ChickenSettings[client][2], sizeof(g_ChickenSettings[][]), "10000");
-				}
-			}
-			else if (StrEqual(title, "Chicken Glow Style"))
-			{
-				if (StrEqual(item, "defaultstyle"))
-				{
-					PrintToChatAll("Default");
-					strcopy(g_ChickenSettings[client][3], sizeof(g_ChickenSettings[][]), "0");
-				}
-				else if (StrEqual(item, "shimmer"))
-				{
-					PrintToChatAll("Shimmer");
-					strcopy(g_ChickenSettings[client][3], sizeof(g_ChickenSettings[][]), "1");
-				}
-				else if (StrEqual(item, "outline"))
-				{
-					PrintToChatAll("Outline");
-					strcopy(g_ChickenSettings[client][3], sizeof(g_ChickenSettings[][]), "2");
-				}
-				else if (StrEqual(item, "outlinepulse"))
-				{
-					PrintToChatAll("Outline Pulse");
-					strcopy(g_ChickenSettings[client][3], sizeof(g_ChickenSettings[][]), "3");
-				}
-			}
-			else if (StrEqual(title, "Chicken Skin"))
-			{
-				if (StrEqual(item, "skin0"))
-				{
-					PrintToChatAll("0");
-					strcopy(g_ChickenSettings[client][4], sizeof(g_ChickenSettings[][]), "0");
-				}
-				else if (StrEqual(item, "skin1"))
-				{
-					PrintToChatAll("1");
-					strcopy(g_ChickenSettings[client][4], sizeof(g_ChickenSettings[][]), "1");
-				}
-				else if (StrEqual(item, "skin2"))
-				{
-					PrintToChatAll("2");
-					strcopy(g_ChickenSettings[client][4], sizeof(g_ChickenSettings[][]), "2");
-				}
-			}
-			else if (StrEqual(title, "Chicken Model"))
-			{
-				if (StrEqual(item, "defaultmodel"))
-				{
-					PrintToChatAll("Default");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
-				}
-				else if (StrEqual(item, "party"))
-				{
-					PrintToChatAll("Birthday");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
-				}
-				else if (StrEqual(item, "ghost"))
-				{
-					PrintToChatAll("Halloween Ghost");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN_ZOMBIE);
-				}
-				else if (StrEqual(item, "sweater"))
-				{
-					PrintToChatAll("Christmas");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
-				}
-				else if (StrEqual(item, "bunny"))
-				{
-					PrintToChatAll("Easter");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
-				}
-				else if (StrEqual(item, "pumpkin"))
-				{
-					PrintToChatAll("Halloween Pumpkin");
-					strcopy(g_ChickenSettings[client][5], sizeof(g_ChickenSettings[][]), MODEL_CHICKEN);
-				}
-			}
-			else if (StrEqual(title, "Chicken Health"))
-			{
-				if (StrEqual(item, "health1"))
-				{
-					PrintToChatAll("1");
-					strcopy(g_ChickenSettings[client][6], sizeof(g_ChickenSettings[][]), "1");
-				}
-				else if (StrEqual(item, "health10"))
-				{
-					PrintToChatAll("10");
-					strcopy(g_ChickenSettings[client][6], sizeof(g_ChickenSettings[][]), "10");
-				}
-				else if (StrEqual(item, "health100"))
-				{
-					PrintToChatAll("100");
-					strcopy(g_ChickenSettings[client][6], sizeof(g_ChickenSettings[][]), "100");
-				}
-				else if (StrEqual(item, "health1000"))
-				{
-					PrintToChatAll("1000");
-					strcopy(g_ChickenSettings[client][6], sizeof(g_ChickenSettings[][]), "1000");
-				}
+				
 			}
 			
 		}
@@ -576,7 +462,7 @@ public int SpawnChicken(int client)
 	
 	int chickenIndex = -1;
 	
-	for (int i = 0; i < sizeof(g_ChickenEntities); i++)
+	for (int i = 0; i < MAX_CHICKENS; i++)
 	{
 		if (g_ChickenEntities[i] <= 0)
 		{
@@ -598,34 +484,33 @@ public int SpawnChicken(int client)
 	if (!IsValidEntity(entity)) {
 		ReplyToCommand(client, "Entity Error, Couldn't Create a chicken");
 		return -1;
-	}	
+	}
 	
 	
-	DispatchKeyValue(entity, "glowstyle", g_ChickenSettings[client][3]);
-	DispatchKeyValue(entity, "glowdist", g_ChickenSettings[client][2]);
-	DispatchKeyValue(entity, "glowcolor", g_ChickenSettings[client][1]);
-	DispatchKeyValue(entity, "glowenabled", g_ChickenSettings[client][0]);
-	
-	g_ChickenHealth[g_NumberOfChickens] = StringToInt(g_ChickenSettings[client][6], 10);
+	DispatchKeyValueFloat(entity, "glowstyle", g_newChickenSettings[client].glowStyle);
+	DispatchKeyValueFloat(entity, "glowdist", g_newChickenSettings[client].glowDistance);
+	DispatchKeyValue(entity, "glowcolor", g_newChickenSettings[client].colour);
+	DispatchKeyValueFloat(entity, "glowenabled", (g_newChickenSettings[client].glow)?1.0:0.0);
+	g_ChickenHealth[g_NumberOfChickens] = g_newChickenSettings[client].health;
 	
 	SDKHook(entity, SDKHook_OnTakeDamage, EntityDamagedEvent);
 	
 	g_NumberOfChickens += 1;
 	DispatchSpawn(entity);
-	SetEntityModel(entity, g_ChickenSettings[client][5]);
+	SetEntityModel(entity, g_newChickenSettings[client].model);
 	TeleportEntity(entity, fPos, NULL_VECTOR, NULL_VECTOR);
-
+	
 	
 	if (g_AnnounceChicken[client])
 	{
-		PrintToChatAll("Chicken Spawned With Settings: %s - %s - %s - %s - %s - %s - %s", 
-			g_ChickenSettings[client][0], 
-			g_ChickenSettings[client][1], 
-			g_ChickenSettings[client][2], 
-			g_ChickenSettings[client][3], 
-			g_ChickenSettings[client][4], 
-			g_ChickenSettings[client][5], 
-			g_ChickenSettings[client][6]);
+		PrintToChatAll("Chicken Spawned With Settings: %d - %s - %.2f - %d - %.2f - %s - %d", 
+			g_newChickenSettings[client].glow, 
+			g_newChickenSettings[client].colour,
+			g_newChickenSettings[client].glowDistance, 
+			g_newChickenSettings[client].glowStyle, 
+			g_newChickenSettings[client].skin, 
+			g_newChickenSettings[client].model, 
+			g_newChickenSettings[client].health);
 	}
 	return entity;
 }
