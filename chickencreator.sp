@@ -51,7 +51,7 @@ enum struct ChickenSettings
 	bool glow;
 	char colour[16];
 	float glowDistance;
-	int glowStyle;
+	float glowStyle;
 	float skin;
 	char model[64];
 	int health;
@@ -97,10 +97,10 @@ public void SetupStringMap()
 	g_ChickenValues.SetValue("small", 1000.0, true);
 	g_ChickenValues.SetValue("medium", 2000.0, true);
 	g_ChickenValues.SetValue("large", 10000.0, true);
-	g_ChickenValues.SetValue("defaultstyle", 0, true);
-	g_ChickenValues.SetValue("shimmer", 1, true);
-	g_ChickenValues.SetValue("outline", 2, true);
-	g_ChickenValues.SetValue("outlinepulse", 3, true);
+	g_ChickenValues.SetValue("defaultstyle", 0.0, true);
+	g_ChickenValues.SetValue("shimmer", 1.0, true);
+	g_ChickenValues.SetValue("outline", 2.0, true);
+	g_ChickenValues.SetValue("outlinepulse", 3.0, true);
 	g_ChickenValues.SetValue("skin0", 0, true);
 	g_ChickenValues.SetValue("skin1", 0.5, true);
 	g_ChickenValues.SetValue("skin2", 1, true);
@@ -178,7 +178,7 @@ public void SetupKeyArray(int client)
 	g_newChickenSettings[client].glowDistance = 1000.0;
 	
 	// Chicken Glow Style is set to default
-	g_newChickenSettings[client].glowStyle = 0;
+	g_newChickenSettings[client].glowStyle = 0.0;
 	
 	// Chicken Skin is set to 0
 	g_newChickenSettings[client].skin = 0.0;
